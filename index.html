@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Smart Scanner - Sheets Integrated</title>
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        #reader {
+            width: 100%;
+            border-radius: 16px;
+            overflow: hidden;
+            border: none !important;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+        #reader__scan_region {
+            background: #f3f4f6;
+        }
+        #reader__dashboard_section_swaplink { display: none !important; }
+        video { object-fit: cover !important; }
+        
+        .animate-slide-up {
+            animation: slideUp 0.3s ease-out forwards;
+        }
+        @keyframes slideUp {
+            from { transform: translateY(10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans antialiased text-gray-900">
+
+    <div class="max-w-md mx-auto min-h-screen flex flex-col p-4">
+        <!-- Header Section -->
+        <header class="text-center py-8">
+            <div class="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl mb-3 shadow-lg shadow-blue-200">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                </svg>
+            </div>
+            <h1 class="text-2xl font-extrabold tracking-tight">Scanner Inventory</h1>
+            <p class="text-gray-500 text-sm mt-1">Arahkan kamera HP ke QR atau Barcode</p>
+        </header>
+
+        <!-- Scanner Container -->
+        <main class="flex-grow">
+            <div class="relative group">
+                <div id="reader" class="bg-black"></div>
+                <!-- Garis Animasi Scan -->
+                <div id="scan-line" class="absolute top-0 left-0 w-full h-1 bg-blue-500 shadow-[0_0_15px_rgba(59,130,246,0.8)] opacity-0 transition-opacity"></div>
+            </div>
+            
+            <!-- Result Box -->
+            <div id="result-container" class="mt-6 transform transition-all duration-300 scale-95 opacity-0 pointer-events-none">
+                <div class="p-4 bg-white border border-green-100 rounded-2xl shadow-sm flex items-center space-x-4">
+                    <div class="flex-shrink-0 w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                        <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-[10px] font-bold text-green-600 uppercase tracking-widest">Berhasil Dipindai</p>
+                        <p id="scanned-result" class="text-sm font-mono font-semibold text-gray-800 truncate"></p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Log List Section -->
+        <section class="mt-8 mb-4">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-sm font-bold text-gray-400 uppercase tracking-wider">Riwayat Scan</h2>
+                <span id="log-count" class="bg-gray-200 text-gray-600 text-[10px] px-2 py-0.5 rounded-full font-bold">0</span>
+            </div>
+            <div id="log-list" class="space-y-3">
+                <div class="text-center py-10 border-2 border-dashed border-gray-200 rounded-2xl">
+                    <p class="text-gray-400 text-xs italic text-center w-full">Belum ada data</p>
+                </div>
+            </div>
+        </section>
+
+        <footer class="text-center pb-4">
+            <p class="text-[10px] text-gray-400 font-medium tracking-widest uppercase text-center w-full">Sync Aktif • Google Sheets</p>
+        </footer>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-8 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full bg-gray-900 text-white text-sm shadow-2xl transition-all duration-300 translate-y-20 opacity-0 z-50">
+        Menyimpan ke Sheets...
+    </div>
+
+    <script>
+        // URL Google Apps Script Anda
+        const BASE_URL = "https://script.google.com/macros/s/AKfycbzafMpFTif2jrPYVLbUirP6tXsHfScwHwM9L7MKxhbOCklKGGjsryxSa-rnIQaNRJ-dpA/exec"; 
+
+        const html5QrCode = new Html5Qrcode("reader");
+        const resultContainer = document.getElementById('result-container');
+        const scannedResultText = document.getElementById('scanned-result');
+        const logList = document.getElementById('log-list');
+        const logCountLabel = document.getElementById('log-count');
+        const toast = document.getElementById('toast');
+        const scanLine = document.getElementById('scan-line');
+
+        let count = 0;
+
+        function showToast(message, type = 'success') {
+            toast.textContent = message;
+            toast.className = `fixed bottom-8 left-1/2 transform -translate-x-1/2 px-6 py-3 rounded-full text-white text-sm shadow-2xl transition-all duration-300 z-50 ${type === 'error' ? 'bg-red-600' : 'bg-gray-900'}`;
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 2500);
+        }
+
+        function addLog(data) {
+            if (count === 0) logList.innerHTML = '';
+            count++;
+            logCountLabel.textContent = count;
+            
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+            
+            const div = document.createElement('div');
+            div.className = "bg-white p-3 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center animate-slide-up";
+            div.innerHTML = `
+                <div class="overflow-hidden mr-2">
+                    <p class="text-sm font-semibold text-gray-800 truncate">${data}</p>
+                    <p class="text-[10px] text-gray-400 font-medium">${timeStr}</p>
+                </div>
+                <div class="flex-shrink-0 flex items-center">
+                    <span class="text-[9px] font-bold text-blue-500 mr-2">TERKIRIM</span>
+                    <div class="w-2 h-2 bg-blue-500 rounded-full"></div>
+                </div>
+            `;
+            logList.prepend(div);
+        }
+
+        /**
+         * Mengirim data dengan format URL: BASE_URL?sdata=HASIL_SCAN
+         */
+        async function sendToSheets(text) {
+            try {
+                // Encode teks agar aman digunakan di URL (menangani spasi atau karakter khusus)
+                const encodedData = encodeURIComponent(text);
+                const finalUrl = `${BASE_URL}?sdata=${encodedData}`;
+
+                console.log("Mengirim ke:", finalUrl);
+
+                // Menggunakan fetch dengan mode no-cors untuk Web App Google Apps Script
+                await fetch(finalUrl, {
+                    method: 'GET', // Menggunakan GET untuk mengirim via parameter URL
+                    mode: 'no-cors'
+                });
+                
+                showToast("Data tersimpan di Google Sheets");
+                addLog(text);
+            } catch (e) {
+                console.error("Fetch error:", e);
+                showToast("Gagal mengirim data", "error");
+            }
+        }
+
+        const onScanSuccess = (decodedText) => {
+            // Hentikan scan sementara agar tidak duplikat
+            html5QrCode.pause(true);
+            scanLine.classList.add('opacity-0');
+            
+            scannedResultText.textContent = decodedText;
+            resultContainer.classList.replace('opacity-0', 'opacity-100');
+            resultContainer.classList.remove('scale-95', 'pointer-events-none');
+            
+            // Proses pengiriman data
+            sendToSheets(decodedText);
+
+            // Lanjutkan scanning kembali setelah jeda
+            setTimeout(() => {
+                resultContainer.classList.add('opacity-0', 'scale-95', 'pointer-events-none');
+                html5QrCode.resume();
+                scanLine.classList.remove('opacity-0');
+            }, 3000);
+        };
+
+        const startScanner = async () => {
+            try {
+                const config = { 
+                    fps: 15, 
+                    qrbox: (viewWidth, viewHeight) => {
+                        const size = Math.min(viewWidth, viewHeight) * 0.7;
+                        return { width: size, height: size };
+                    }
+                };
+                
+                await html5QrCode.start({ facingMode: "environment" }, config, onScanSuccess);
+                scanLine.classList.remove('opacity-0');
+            } catch (err) {
+                console.error("Camera error:", err);
+                showToast("Mohon izinkan akses kamera HP", "error");
+            }
+        };
+
+        window.onload = startScanner;
+
+    </script>
+</body>
+</html>
