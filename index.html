@@ -10,34 +10,71 @@
     <style>
         body {
             font-family: 'Roboto', sans-serif;
-            background-color: #d1d5db; /* Warna abu-abu di luar bingkai */
+            background-color: #d1d5db;
             margin: 0;
             padding: 0;
             display: flex;
             justify-content: center;
             align-items: center;
             min-height: 100vh;
+            overflow: hidden;
         }
 
         /* Bingkai Utama Aplikasi */
         .app-shell {
             width: 100%;
-            max-width: 480px; /* Batas lebar agar terlihat seperti HP di desktop */
+            max-width: 480px;
             height: 96vh;
             background-color: #f0f2f5;
             position: relative;
             overflow-y: auto;
-            border-radius: 40px; /* Pojok melengkung di bingkai luar */
+            border-radius: 40px;
             border: 8px solid #ffffff;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
             display: flex;
             flex-direction: column;
+            transition: filter 0.3s ease;
         }
 
-        /* Scrollbar tersembunyi untuk tampilan bersih */
-        .app-shell::-webkit-scrollbar {
-            width: 0px;
+        .app-shell.blurred {
+            filter: blur(10px);
+            pointer-events: none;
         }
+
+        /* Kartu Login Overlay */
+        #login-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(4px);
+            padding: 20px;
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        #login-overlay.hidden-login {
+            opacity: 0;
+            visibility: hidden;
+            transform: scale(1.1);
+        }
+
+        .login-card {
+            background: white;
+            width: 100%;
+            max-width: 340px;
+            padding: 32px;
+            border-radius: 32px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            text-align: center;
+            transform: translateY(0);
+            transition: transform 0.3s ease;
+        }
+
+        /* Scrollbar tersembunyi */
+        .app-shell::-webkit-scrollbar { width: 0px; }
 
         #reader {
             width: 100%;
@@ -92,8 +129,33 @@
 </head>
 <body>
 
+    <!-- Overlay Login -->
+    <div id="login-overlay">
+        <div class="login-card">
+            <div class="flex justify-center mb-6">
+                <div class="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center">
+                    <svg class="w-10 h-10 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002-2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                </div>
+            </div>
+            <h2 class="text-2xl font-black text-gray-800 mb-2">Akses Terbatas</h2>
+            <p class="text-sm text-gray-400 mb-6">Masukkan kode akses petugas</p>
+            
+            <input type="password" id="login-pass" 
+                   class="w-full bg-gray-50 border-2 border-gray-100 px-4 py-4 rounded-2xl text-center text-xl font-bold focus:border-blue-500 focus:outline-none transition-all mb-4" 
+                   placeholder="••••">
+            
+            <button onclick="handleLogin()" 
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-blue-200 active:scale-95 transition-all">
+                Masuk Sekarang
+            </button>
+            <p id="error-msg" class="text-red-500 text-xs mt-3 font-bold opacity-0 transition-opacity">Kode salah, silakan coba lagi</p>
+        </div>
+    </div>
+
     <!-- Bingkai Luar Aplikasi (App Shell) -->
-    <div class="app-shell">
+    <div id="main-shell" class="app-shell blurred">
         
         <!-- Header / Top Bar -->
         <nav class="bg-blue-700 text-white px-6 pt-10 pb-12 shadow-xl rounded-b-[45px] text-center relative z-20">
@@ -162,7 +224,6 @@
             </div>
         </main>
 
-        <!-- Footer Info -->
         <footer class="py-4 text-center text-[10px] text-gray-400 font-bold uppercase tracking-widest">
             &copy; 2024 SMPN 4 MAJENANG
         </footer>
@@ -177,6 +238,7 @@
 
     <script>
         const CONFIG_URL = "https://script.google.com/macros/s/AKfycbx8nd-Fg7bPRCXlpIWfrAxFH7lYrPWcG1liAj5Fhq6VYjFwd0qim6ROcIkBXNGY1JunYQ/exec"; 
+        const PASS_KEY = "1234"; // Ganti kode akses ini sesuai kebutuhan
 
         const html5QrCode = new Html5Qrcode("reader");
         const kelasSelect = document.getElementById('kelas-select');
@@ -189,9 +251,37 @@
         const toastMsg = document.getElementById('toast-msg');
         const toastSpinner = document.getElementById('toast-spinner');
         const scanAnim = document.getElementById('scan-anim');
+        
+        const loginOverlay = document.getElementById('login-overlay');
+        const mainShell = document.getElementById('main-shell');
+        const loginPass = document.getElementById('login-pass');
+        const errorMsg = document.getElementById('error-msg');
 
         let count = 0;
         let daftarKelas = [];
+
+        function handleLogin() {
+            if (loginPass.value === PASS_KEY) {
+                // Sembunyikan Overlay
+                loginOverlay.classList.add('hidden-login');
+                mainShell.classList.remove('blurred');
+                
+                // Mulai ambil data setelah login sukses
+                fetchConfig();
+            } else {
+                errorMsg.classList.remove('opacity-0');
+                loginPass.classList.add('border-red-400');
+                setTimeout(() => {
+                    errorMsg.classList.add('opacity-0');
+                    loginPass.classList.remove('border-red-400');
+                }, 2000);
+            }
+        }
+
+        // Support tekan Enter di keyboard
+        loginPass.addEventListener("keypress", function(event) {
+            if (event.key === "Enter") handleLogin();
+        });
 
         async function fetchConfig() {
             try {
@@ -304,7 +394,10 @@
             }
         };
 
-        window.onload = fetchConfig;
+        // window.onload diubah agar tidak langsung fetchConfig, tapi menunggu login
+        window.onload = () => {
+            loginPass.focus();
+        };
     </script>
 </body>
 </html>
